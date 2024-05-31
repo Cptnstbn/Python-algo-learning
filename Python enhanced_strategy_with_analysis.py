@@ -26,6 +26,9 @@ data.set_index('time', inplace=True)
 
 mt5.shutdown()
 
+# Save intermediate data
+data.to_csv('initial_data.csv')
+
 # Alligator Indicator
 def alligator(data, jaw_length=13, teeth_length=8, lips_length=5, jaw_offset=8, teeth_offset=5, lips_offset=3):
     data['jaw'] = data['close'].rolling(window=jaw_length).mean().shift(jaw_offset)
@@ -95,10 +98,14 @@ def apply_strategy(data, params):
 
     return data
 
+# Save intermediate data after applying strategy
+data.to_csv('data_with_strategy.csv')
+
 # Define the objective function for optimization
 def objective_function(params, data):
     data_copy = data.copy()
     data_copy = apply_strategy(data_copy, params)
+    data_copy.to_csv('data_before_backtest.csv')
     final_balance = backtest(data_copy)
     return -final_balance  # We minimize the negative final balance to maximize it
 
@@ -110,6 +117,9 @@ def backtest(data, initial_balance=10000):
     entry_price = 0
     risk_per_trade = 0.01  # 1% of equity
     take_profit_multiplier = 3  # 3R trading strategy
+
+    # Debug: Print columns of data before starting backtest
+    print("Columns in data before backtest:", data.columns)
 
     for i in range(len(data)):
         if data['buy_signal'].iloc[i] and position == 0:
@@ -135,92 +145,17 @@ def backtest(data, initial_balance=10000):
 
     return balance
 
-# Performance Metrics
-def calculate_performance_metrics(data):
-    close_prices = data['close']
+# Ensure the apply_strategy function is called with appropriate parameters
+params = [13, 8, 5, 8, 5, 3, 14, 3, 14, 1.5]  # Example parameters
+data = apply_strategy(data, params)
 
-    metrics = {
-        'CAGR': ta.cagr(close_prices),
-        'Calmar Ratio': ta.calmar_ratio(close_prices),
-        'Downside Deviation': ta.downside_deviation(close_prices),
-        'Log Max Drawdown': ta.log_max_drawdown(close_prices),
-        'Max Drawdown': ta.max_drawdown(close_prices),
-        'Pure Profit Score': ta.pure_profit_score(close_prices),
-        'Sharpe Ratio': ta.sharpe_ratio(close_prices),
-        'Sortino Ratio': ta.sortino_ratio(close_prices),
-        'Volatility': ta.volatility(close_prices)
-    }
+# Verify if the buy_signal and sell_signal columns exist
+print("Columns in data after apply_strategy:", data.columns)
+data.to_csv('data_after_strategy.csv')
 
-    return metrics
-
-# Walk-Forward Analysis
-def walk_forward_analysis(data, initial_params, bounds, n_splits=5):
-    tscv = TimeSeriesSplit(n_splits=n_splits)
-    results = []
-
-    for train_index, test_index in tscv.split(data):
-        train_data, test_data = data.iloc[train_index], data.iloc[test_index]
-
-        # Optimize parameters on the training set
-        result = minimize(objective_function, initial_params, args=(train_data,), bounds=bounds, method='L-BFGS-B')
-        optimized_params = result.x
-
-        # Apply the optimized parameters to the test set
-        test_data = apply_strategy(test_data, optimized_params)
-        final_balance = backtest(test_data)
-
-        results.append(final_balance)
-
-    return results
-
-# Sensitivity Analysis
-def sensitivity_analysis(data, param_name, param_values):
-    results = []
-
-    for value in param_values:
-        params = [13, 8, 5, 8, 5, 3, 14, 3, 14, value]  # Replace the ATR multiplier with the current value
-        data_copy = apply_strategy(data.copy(), params)
-        final_balance = backtest(data_copy)
-        results.append((value, final_balance))
-
-    return results
-
-# Initial parameters and bounds
-initial_params = [13, 8, 5, 8, 5, 3, 14, 3, 14, 1.75]
-bounds = [(10, 20), (5, 15), (3, 10), (5, 10), (3, 8), (1, 5), (10, 20), (1, 5), (10, 20), (1.0, 3.0)]
-
-# Perform walk-forward analysis
-walk_forward_results = walk_forward_analysis(data, initial_params, bounds)
-print(f"Walk-Forward Analysis Results: {walk_forward_results}")
-
-# Perform sensitivity analysis on the ATR multiplier
-atr_multipliers = np.linspace(1.0, 3.0, 10)  # Test values between 1.0 and 3.0
-sensitivity_results = sensitivity_analysis(data, 'atr_multiplier', atr_multipliers)
-print(f"Sensitivity Analysis Results: {sensitivity_results}")
-
-# Final Balance and Performance Metrics
+# Run backtest
 final_balance = backtest(data)
-metrics = calculate_performance_metrics(data)
-print(f"Final Balance: {final_balance}")
-print(f"Performance Metrics: {metrics}")
+print("Final Balance:", final_balance)
 
-# Visualization
-def plot_strategy(data, final_balance, metrics):
-    plt.figure(figsize=(14, 7))
-    plt.plot(data.index, data['close'], label='Close Price')
-    plt.plot(data.index, data['jaw'], label='Jaw')
-    plt.plot(data.index, data['teeth'], label='Teeth')
-    plt.plot(data.index, data['lips'], label='Lips')
-    plt.scatter(data.index, data['fractal_up'], label='Fractal Up', marker='^', color='green')
-    plt.scatter(data.index, data['fractal_down'], label='Fractal Down', marker='v', color='red')
-    
-    # Add final balance and performance metrics to the plot
-    plt.text(data.index[-1], data['close'].max(), f'Final Balance: ${final_balance:.2f}', fontsize=12, verticalalignment='top')
-    metrics_text = "\n".join([f"{key}: {value:.2f}" for key, value in metrics.items()])
-    plt.text(data.index[-1], data['close'].max() - (data['close'].max() * 0.1), metrics_text, fontsize=10, verticalalignment='top')
-    
-    plt.title('Trading Strategy Visualization')
-    plt.legend()
-    plt.show()
-
-plot_strategy(data, final_balance, metrics)
+# Save final data
+data.to_csv('final_data.csv')
